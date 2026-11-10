@@ -1,0 +1,3 @@
+# Capability package
+
+Read ../../AGENTS.md and ../../docs/PROJECT.md, DEVELOPMENT.md, STATUS.md and RUNTIME-CAPABILITIES.md in the composed checkout. Flecs is authoritative; bindings are disposable adapters. Keep one registered capability per binding, explicit dependencies and a single transform owner. Accept application assets/services through explicit references/providers. Never depend on the consuming application's Assets paths or feature types. Preserve namespaces, GUIDs and the stable C ABI during this migration. Optional vendor integrations remain independently gated; do not add arbitrary Inspector reflection or another ECS. Verify outputs and reconstruction, not only component existence.

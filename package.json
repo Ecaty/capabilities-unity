@@ -1,0 +1,18 @@
+{
+  "name": "com.runtime.capabilities",
+  "version": "0.1.0",
+  "displayName": "Runtime Capabilities",
+  "description": "Reusable Flecs capability contracts, lifecycle, registered assets and Unity adapters. Application resources are supplied by the host.",
+  "unity": "6000.6",
+  "dependencies": {
+    "com.unity.ai.navigation": "2.0.16",
+    "com.unity.animation.rigging": "6.6.0",
+    "com.unity.cinemachine": "6.6.0",
+    "com.unity.inputsystem": "1.20.1",
+    "com.unity.render-pipelines.universal": "17.6.0",
+    "com.unity.timeline": "6.6.0",
+    "com.unity.visualeffectgraph": "17.6.0",
+    "com.unity.nuget.newtonsoft-json": "3.2.2",
+    "com.ecaty.flecs-unity": "0.2.1"
+  }
+}
