@@ -227,11 +227,20 @@ namespace Ecaty.Flecs.Capabilities
         {
             float width = Mathf.Clamp(j.radius * 2, 1, 1000);
             surface.size = new Vector3(width, Mathf.Clamp(j.height, 1, 1000), width);
+            // Each build creates a new NavMeshData asset; RemoveData only unregisters it from the NavMesh.
+            var previous = surface.navMeshData;
             surface.BuildNavMesh();
+            if (previous && previous != surface.navMeshData)
+                UnityEngine.Object.Destroy(previous);
         }
         public override void Dispose()
         {
+            if (!surface)
+                return;
             surface.RemoveData();
+            if (surface.navMeshData)
+                UnityEngine.Object.Destroy(surface.navMeshData);
+            surface.navMeshData = null;
         }
     }
     [Capability("CapNavigation", "navigation intent", 35)]

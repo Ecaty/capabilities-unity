@@ -163,6 +163,9 @@ namespace Ecaty.Flecs.Capabilities
                 return;
             Clear();
             session = World.Session;
+            queryHandles.Clear();
+            polling.Clear();
+            fullPass = true;
             InstallSchema(session);
             foreach (var adapter in adapters)
                 PublishType(adapter);
@@ -217,6 +220,7 @@ namespace Ecaty.Flecs.Capabilities
                 throw new ArgumentException("Duplicate capability adapter: " + adapter.Component);
             adapters.Add(adapter);
             adapters.Sort((a, b) => a.Order.CompareTo(b.Order));
+            fullPass = true;
             if (session != null)
                 PublishType(adapter);
         }
@@ -225,17 +229,52 @@ namespace Ecaty.Flecs.Capabilities
             var custom = TargetResolver?.Invoke(entity);
             return custom ? custom : World.FindView(entity)?.transform;
         }
-        public void Reconcile()
+        /// <summary>Full pass over every binding. The 20 Hz update reads only binding tables that changed.</summary>
+        public void Reconcile() => Reconcile(true);
+        // Reused per pass so an idle world allocates nothing.
+        readonly HashSet<string> seen = new();
+        readonly HashSet<string> processed = new();
+        readonly HashSet<string> polling = new();
+        readonly List<string> stale = new();
+        readonly List<Binding> ticking = new();
+        readonly Dictionary<string, int> queryHandles = new();
+        readonly Dictionary<string, string> queryExpressions = new();
+        bool fullPass = true;
+        /// <summary>
+        /// <paramref name="force"/> false reads only binding tables whose Flecs data changed (edits, added/removed bindings,
+        /// native CapDirty) plus bindings waiting for a target view; an idle world allocates nothing.
+        /// </summary>
+        public void Reconcile(bool force)
         {
             EnsureSession();
             if (session == null || session.IsDisposed)
                 return;
-            var seen = new HashSet<string>();
+            // Unity-side changes that Flecs cannot report: a destroyed target view.
+            foreach (var b in bindings.Values)
+                if (!b.Context.Target)
+                    polling.Add(b.Component);
+            force |= fullPass;
+            fullPass = false;
+            seen.Clear();
+            processed.Clear();
             foreach (var adapter in adapters)
             {
-                if (session.Lookup(adapter.Component) == 0)
+                if (session.TypeId(adapter.Component) == 0)
                     continue;
-                foreach (var row in JObject.Parse(session.Query("CapBinding, " + adapter.Component))["results"])
+                if (!queryHandles.TryGetValue(adapter.Component, out int handle))
+                {
+                    if (!queryExpressions.TryGetValue(adapter.Component, out string expression))
+                        queryExpressions[adapter.Component] = expression = "CapBinding, " + adapter.Component;
+                    handle = session.QueryHandle(expression);
+                    queryHandles[adapter.Component] = handle;
+                }
+                // Configuration edits, added/removed bindings and native CapDirty (dependency results) all change the table.
+                bool changed = session.QueryChanged(handle);
+                if (!force && !changed && !polling.Contains(adapter.Component))
+                    continue;
+                processed.Add(adapter.Component);
+                polling.Remove(adapter.Component);
+                foreach (var row in JObject.Parse(session.QueryJson(handle))["results"])
                 {
                     var values = row["fields"]?["values"];
                     if (values == null)
@@ -261,6 +300,7 @@ namespace Ecaty.Flecs.Capabilities
                         if (!target)
                         {
                             WriteState(path, 0, (int)input["revision"], 0, "Waiting for target view");
+                            polling.Add(adapter.Component);
                             continue;
                         }
                         var host = new GameObject(adapter.Component + " binding");
@@ -275,6 +315,7 @@ namespace Ecaty.Flecs.Capabilities
                         {
                             Remove(key);
                             seen.Remove(key);
+                            polling.Add(adapter.Component);
                             continue;
                         }
                         int ready = CapabilityNative.fu_cap_ready(session.NativeContext, binding.Context.Entity);
@@ -314,7 +355,11 @@ namespace Ecaty.Flecs.Capabilities
                     }
                 }
             }
-            foreach (string key in bindings.Keys.Where(k => !seen.Contains(k)).ToArray())
+            stale.Clear();
+            foreach (var pair in bindings)
+                if (processed.Contains(pair.Value.Component) && !seen.Contains(pair.Key))
+                    stale.Add(pair.Key);
+            foreach (string key in stale)
                 Remove(key);
         }
         void ApplyBinding(ICapabilityAdapter adapter, Binding binding, JObject config)
@@ -368,9 +413,9 @@ namespace Ecaty.Flecs.Capabilities
             if (Time.unscaledTime >= nextReconcile)
             {
                 nextReconcile = Time.unscaledTime + .05f;
-                Reconcile();
+                Reconcile(false);
             }
-            foreach (var b in bindings.Values.ToArray())
+            foreach (var b in Ticking())
             if (b.Ticks)
                 try
                 {
@@ -385,7 +430,7 @@ namespace Ecaty.Flecs.Capabilities
         {
             if (session == null || session.IsDisposed)
                 return;
-            foreach (var b in bindings.Values.ToArray())
+            foreach (var b in Ticking())
             if (b.Ticks)
                 try
                 {
@@ -400,7 +445,7 @@ namespace Ecaty.Flecs.Capabilities
         {
             if (session == null || session.IsDisposed)
                 return;
-            foreach (var b in bindings.Values.ToArray())
+            foreach (var b in Ticking())
             if (b.Ticks)
                 try
                 {
@@ -410,6 +455,14 @@ namespace Ecaty.Flecs.Capabilities
                 {
                     TickFailed(b, e);
                 }
+        }
+        // Snapshot in a reused list: a tick failure may change bindings while iterating.
+        List<Binding> Ticking()
+        {
+            ticking.Clear();
+            foreach (var b in bindings.Values)
+                ticking.Add(b);
+            return ticking;
         }
         void Remove(string key)
         {
