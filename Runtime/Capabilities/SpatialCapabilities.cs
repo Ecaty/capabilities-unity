@@ -5,16 +5,27 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 namespace Ecaty.Flecs.Capabilities
 {
-    public sealed class TerrainCapability : CapabilityInstance
+    [Capability("CapTerrain", "ground modifiers", 10)]
+    public sealed class TerrainConfig
+    {
+        [EntityField] public string source = "";
+        public string points = "";
+        public float size = 10;
+        public int resolution = 33;
+        public float height, falloff = 1;
+    }
+    public sealed class TerrainCapability : CapabilityInstance<TerrainConfig>
     {
         MeshFilter filter; MeshCollider collider; Mesh mesh;
         public TerrainCapability(CapabilityContext c) : base(c) { filter = Host.AddComponent<MeshFilter>(); var r = Host.AddComponent<MeshRenderer>(); r.sharedMaterial = Context.Runtime.World.presentationMaterial; collider = Host.AddComponent<MeshCollider>(); }
-        public override void Apply(JObject j)
+        protected override void Apply(TerrainConfig j)
         {
-            float size = Mathf.Clamp(j.F("size", 10), 1, 2000), baseline = j.F("height"), falloff = Mathf.Clamp(j.F("falloff", 1), .05f, size);
-            int n = Mathf.Clamp(j.I("resolution", 33), 3, 129);
-            string points = j.S("points");
-            var source = j.Entity("source", Context.Session);
+            float size = Mathf.Clamp(j.size, 1, 2000);
+            float baseline = j.height;
+            float falloff = Mathf.Clamp(j.falloff, .05f, size);
+            int n = Mathf.Clamp(j.resolution, 3, 129);
+            string points = j.points;
+            var source = Context.Entity(j.source);
             if (source != 0)
             {
                 var input = Context.Session.ComponentJson(source, "CapSpline");
@@ -123,20 +134,29 @@ namespace Ecaty.Flecs.Capabilities
             return camera && mouse != null && Physics.Raycast(camera.ScreenPointToRay(mouse.position.ReadValue()), out var hit, 10000, ~0, QueryTriggerInteraction.Collide) && hit.collider.GetComponent<CapabilityHandleMarker>();
         }
     }
-    public sealed class HandleCapability : CapabilityInstance
+    [Capability("CapHandle", "direct manipulation", 50)]
+    public sealed class HandleConfig
+    {
+        public float radius = .12f, grid;
+        public bool enabled;
+        [EntityField] public string edit = "";
+        public string component = "";
+        public int index;
+    }
+    public sealed class HandleCapability : CapabilityInstance<HandleConfig>
     {
         static HandleCapability active; public static bool IsDragging => active != null; GameObject knob; float grid; Plane plane; bool ownsPose; ulong edit; string component; int index; JObject original; Vector3 begin;
         public HandleCapability(CapabilityContext c) : base(c) { knob = GameObject.CreatePrimitive(PrimitiveType.Sphere); knob.name = "Manipulation handle"; knob.GetComponent<Collider>().isTrigger = true; knob.transform.SetParent(Host.transform, false); knob.AddComponent<CapabilityHandleMarker>().Entity = c.Entity; knob.GetComponent<Renderer>().sharedMaterial = Context.Runtime.World.presentationMaterial; }
-        public override void Apply(JObject j)
+        protected override void Apply(HandleConfig j)
         {
-            knob.SetActive(j.B("enabled"));
-            knob.transform.localScale = Vector3.one * Mathf.Clamp(j.F("radius", .12f) * 2, .02f, 2);
-            grid = Mathf.Max(0, j.F("grid"));
-            edit = j.Entity("edit", Context.Session);
+            knob.SetActive(j.enabled);
+            knob.transform.localScale = Vector3.one * Mathf.Clamp(j.radius * 2, .02f, 2);
+            grid = Mathf.Max(0, j.grid);
+            edit = Context.Entity(j.edit);
             if (edit == 0)
                 edit = Context.TargetEntity;
-            component = j.S("component");
-            index = j.I("index");
+            component = j.component;
+            index = j.index;
         }
         public override void Tick(float delta)
         {

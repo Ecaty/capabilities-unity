@@ -64,11 +64,18 @@ namespace Ecaty.Flecs.Capabilities
             }
         }
     }
-    public sealed class AudioCapability : CapabilityInstance
+    [Capability("CapAudio", "audio", 40)]
+    public sealed class AudioConfig
+    {
+        public int program, note = 60;
+        public float gain = .5f, spatial, pitch = 1, lowPass = 22000;
+        public int trigger, synthesis;
+    }
+    public sealed class AudioCapability : CapabilityInstance<AudioConfig>
     {
         NativeAudio synth; AudioSource source; AudioClip clip; AudioLowPassFilter filter; int trigger = int.MinValue, noteSequence = int.MinValue, program, rate; float nextReport;
         public AudioCapability(CapabilityContext c) : base(c) { }
-        public override void Apply(JObject j)
+        protected override void Apply(AudioConfig j)
         {
             if (source == null)
             {
@@ -83,17 +90,18 @@ namespace Ecaty.Flecs.Capabilities
                 filter = Host.AddComponent<AudioLowPassFilter>();
                 source.Play();
             }
-            source.volume = Mathf.Clamp01(j.F("gain", .5f));
-            source.spatialBlend = Mathf.Clamp01(j.F("spatial"));
-            source.pitch = Mathf.Clamp(j.F("pitch", 1), .1f, 3);
+            source.volume = Mathf.Clamp01(j.gain);
+            source.spatialBlend = Mathf.Clamp01(j.spatial);
+            source.pitch = Mathf.Clamp(j.pitch, .1f, 3);
             source.minDistance = 1;
             source.maxDistance = 50;
-            filter.cutoffFrequency = Mathf.Clamp(j.F("lowPass", 22000), 10, 22000);
-            program = j.I("program");
-            if (j.I("trigger") != trigger)
+            filter.cutoffFrequency = Mathf.Clamp(j.lowPass, 10, 22000);
+            program = j.program;
+            if (j.trigger != trigger)
             {
-                trigger = j.I("trigger");
-                synth.Note(j.I("synthesis") == 1 ? 3 : j.I("synthesis") == 2 ? 4 : 0, j.I("note", 60), 1, program, 0, .3, rate);
+                trigger = j.trigger;
+                int voice = j.synthesis == 1 ? 3 : j.synthesis == 2 ? 4 : 0;
+                synth.Note(voice, j.note, 1, program, 0, .3, rate);
             }
         }
         public override void Tick(float delta)

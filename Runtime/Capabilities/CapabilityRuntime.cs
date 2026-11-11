@@ -56,6 +56,16 @@ namespace Ecaty.Flecs.Capabilities
         public ulong Entity, TargetEntity; public string Path; public Transform Target; public GameObject Host;
         public T Asset<T>(string key) where T : UnityEngine.Object => Runtime.Assets != null ? Runtime.Assets.Resolve<T>(key) : null;
         public Transform Resolve(ulong id) => Runtime.Resolve(id);
+        /// <summary>Resolves an entity field (path, numeric id, or empty for none).</summary>
+        public ulong Entity(string reference)
+        {
+            if (string.IsNullOrEmpty(reference) || reference == "0" || reference == "#0")
+                return 0;
+            if (ulong.TryParse(reference.TrimStart('#'), out ulong id))
+                return id;
+            return Session.Lookup(reference);
+        }
+        public Transform Resolve(string reference) => Runtime.Resolve(Entity(reference));
         public JObject Read(string type)
         {
             var value = Session.ComponentJson(Entity, type);
@@ -93,24 +103,33 @@ namespace Ecaty.Flecs.Capabilities
             return audioBank = data;
         }
         readonly Dictionary<string, JObject> pendingRestore = new();
-        public JObject CaptureState()
+        public JObject CaptureState() => CaptureState(null);
+        /// <summary>Selected adapter state of bindings whose entity path is within <paramref name="scope"/> (all when null).</summary>
+        public JObject CaptureState(string scope)
         {
             var result = new JObject();
             foreach (var p in bindings)
             {
+                string path = p.Value.Context.Path;
+                if (!string.IsNullOrEmpty(scope) && path != scope && !path.StartsWith(scope + ".", StringComparison.Ordinal))
+                    continue;
                 var state = p.Value.Instance?.CaptureState();
                 if (state != null)
                     result[p.Key] = state;
             }
             return result;
         }
-        public void QueueRestore(JObject values)
+        public void QueueRestore(JObject values) => QueueRestore(values, false);
+        /// <summary>Queues state for the next successful apply of each "path|Component" binding; merge keeps other queued state.</summary>
+        public void QueueRestore(JObject values, bool merge)
         {
             EnsureSession();
-            pendingRestore.Clear();
+            if (!merge)
+                pendingRestore.Clear();
             if (values != null)
             foreach (var p in values.Properties())
-                pendingRestore[p.Name] = (JObject)p.Value.DeepClone();
+                if (p.Value is JObject state)
+                    pendingRestore[p.Name] = (JObject)state.DeepClone();
         }
         public Func<ulong, Transform> TargetResolver;
         public IReadOnlyList<ICapabilityAdapter> Adapters => adapters;
@@ -119,7 +138,16 @@ namespace Ecaty.Flecs.Capabilities
         readonly Dictionary<string, Binding> bindings = new();
         sealed class Binding
         {
-            public CapabilityContext Context; public CapabilityInstance Instance; public string Signature; public int Generation; public int Phase;
+            public CapabilityContext Context;
+            public CapabilityInstance Instance;
+            public string Component;
+            public string Signature;
+            public JObject LastValid;
+            public bool Retained;
+            public int Generation;
+            public int Phase;
+            public int Revision;
+            public bool Ticks => Phase == 1 || Retained;
         }
         FlecsSession session;
         public void Initialize(FlecsWorld world)
@@ -135,10 +163,7 @@ namespace Ecaty.Flecs.Capabilities
                 return;
             Clear();
             session = World.Session;
-            if (session.ManagedScriptSource("CapabilitySchema") == null)
-                session.SetManagedScript("CapabilitySchema", Resources.Load<TextAsset>("CapabilitySchema").text);
-            if (session.ManagedScriptSource("CapabilityPostProcessingSchema") == null)
-                session.SetManagedScript("CapabilityPostProcessingSchema", Resources.Load<TextAsset>("CapabilityPostProcessingSchema").text);
+            InstallSchema(session);
             foreach (var adapter in adapters)
                 PublishType(adapter);
             if (Assets)
@@ -151,13 +176,41 @@ namespace Ecaty.Flecs.Capabilities
                 session.SetManagedScript("CapabilityAssetIndex", source.ToString());
             }
         }
+        /// <summary>
+        /// Shared contracts come from CapabilitySchema.flecs; configuration structs are generated from [Capability] classes.
+        /// A restored session keeps its saved schema source. Configurations it lacks are added in a separate module.
+        /// </summary>
+        public static void InstallSchema(FlecsSession target)
+        {
+            if (target.ManagedScriptSource(SchemaModule) == null)
+            {
+                target.SetManagedScript(SchemaModule, Resources.Load<TextAsset>(SchemaModule).text + "
+" + CapabilityCatalog.Schema());
+                return;
+            }
+            // One module per added struct: never re-evaluate a module that already defines live component types.
+            foreach (var d in CapabilityCatalog.All)
+                if (target.Lookup(d.Info.Component) == 0)
+                    target.SetManagedScript(SchemaModule + "Additions." + d.Info.Component, d.Schema);
+        }
+        public const string SchemaModule = "CapabilitySchema";
         void PublishType(ICapabilityAdapter a)
         {
             string notes = "Runtime create/update/remove. One capability per binding entity; compose by shared targets and dependencies. Assets must be registered.";
+            var descriptor = CapabilityCatalog.Find(a.Component);
+            if (descriptor != null && descriptor.AssetFields.Any())
+                notes += " Asset key fields: " + string.Join(", ", descriptor.AssetFields) + ".";
             string code = "module CapabilityTypes." + a.Component + "\ndefinition { CapType: {component:" + JsonConvert.ToString(a.Component) + ",category:" + JsonConvert.ToString(a.Category) + ",description:" + JsonConvert.ToString(notes) + "}";
             if (session.Lookup("EngineCapability") != 0)
                 code += "; BoundCapability; EngineCapability: {category:" + JsonConvert.ToString(a.Category) + ",command:" + JsonConvert.ToString(a.Component + " configuration with CapBinding target/enabled/revision") + ",result:" + JsonConvert.ToString("CapState and capability-specific observed outputs") + ",notes:" + JsonConvert.ToString(notes) + "}";
             session.SetManagedScript("CapabilityTypes." + a.Component, code + " }");
+        }
+        /// <summary>Registers every compiled typed adapter that is not registered yet.</summary>
+        public void RegisterDiscovered()
+        {
+            foreach (var adapter in CapabilityCatalog.Adapters())
+                if (adapters.All(a => a.Component != adapter.Component))
+                    Register(adapter);
         }
         public void Register(ICapabilityAdapter adapter)
         {
@@ -213,9 +266,10 @@ namespace Ecaty.Flecs.Capabilities
                         }
                         var host = new GameObject(adapter.Component + " binding");
                         host.transform.SetParent(target, false);
-                        binding = new Binding { Context = new CapabilityContext { Runtime = this, SessionOwner = session, Entity = session.Lookup(path), Path = path, TargetEntity = targetId, Target = target, Host = host } };
+                        binding = new Binding { Component = adapter.Component, Context = new CapabilityContext { Runtime = this, SessionOwner = session, Entity = session.Lookup(path), Path = path, TargetEntity = targetId, Target = target, Host = host } };
                         bindings.Add(key, binding);
                     }
+                    binding.Revision = (int)input["revision"];
                     try
                     {
                         if (!binding.Context.Target || binding.Context.TargetEntity != targetId)
@@ -227,47 +281,83 @@ namespace Ecaty.Flecs.Capabilities
                         int ready = CapabilityNative.fu_cap_ready(session.NativeContext, binding.Context.Entity);
                         if (ready != 1)
                         {
-                            binding.Phase = 0;
-                            if (binding.Context.Host)
-                                binding.Context.Host.SetActive(false);
-                            WriteState(path, ready < 0 ? -1 : 0, (int)input["revision"], binding.Generation, ready < 0 ? "Dependency failed or cycle" : "Waiting for dependency");
+                            // Keep the last valid output while a prerequisite regenerates or has failed; apply again once it is ready.
+                            if (binding.Phase == 1)
+                                binding.Phase = 0;
+                            string waiting = ready < 0 ? "Dependency failed or cycle" : "Waiting for dependency";
+                            if (binding.Generation > 0)
+                                waiting += "; keeping last valid result";
+                            WriteState(path, ready < 0 ? -1 : 0, (int)input["revision"], binding.Generation, waiting);
                             continue;
                         }
                         bool dirty = CapabilityNative.fu_cap_has(session.NativeContext, binding.Context.Entity, "CapDirty") != 0;
-                        if (binding.Signature != signature || dirty || binding.Phase == 0)
+                        // A failed configuration is retried only after it changes or a prerequisite result changes.
+                        if (binding.Signature == "!" + signature && !dirty)
+                            continue;
+                        if (binding.Signature != signature || dirty || binding.Phase != 1)
                         {
-                            if (binding.Signature == "!" + signature)
-                                continue;
-                            if (!binding.Context.Host)
-                            {
-                                binding.Context.Host = new GameObject(adapter.Component + " binding");
-                                binding.Context.Host.transform.SetParent(binding.Context.Target, false);
-                            }
-                            binding.Instance ??= adapter.Create(binding.Context);
-                            binding.Context.Host.SetActive(true);
-                            binding.Instance.Apply(config);
+                            ApplyBinding(adapter, binding, config);
                             if (pendingRestore.Remove(key, out var restore))
                                 binding.Instance.RestoreState(restore);
                             CapabilityNative.fu_cap_ack(session.NativeContext, binding.Context.Entity);
                             binding.Signature = signature;
+                            binding.LastValid = (JObject)config.DeepClone();
+                            binding.Retained = false;
                             binding.Phase = 1;
                             ++binding.Generation;
                             WriteState(path, 1, (int)input["revision"], binding.Generation, "");
                         }
-
                     }
                     catch (Exception e)
                     {
-                        DisposeBinding(binding);
-                        binding.Signature = "!" + signature;
-                        binding.Phase = -1;
-                        WriteState(path, -1, (int)input["revision"], binding.Generation, Failure(e));
+                        CapabilityNative.fu_cap_ack(session.NativeContext, binding.Context.Entity);
+                        Fail(adapter, binding, signature, (int)input["revision"], e);
                     }
                 }
             }
             foreach (string key in bindings.Keys.Where(k => !seen.Contains(k)).ToArray())
                 Remove(key);
         }
+        void ApplyBinding(ICapabilityAdapter adapter, Binding binding, JObject config)
+        {
+            if (!binding.Context.Host)
+            {
+                binding.Context.Host = new GameObject(adapter.Component + " binding");
+                binding.Context.Host.transform.SetParent(binding.Context.Target, false);
+            }
+            binding.Instance ??= adapter.Create(binding.Context);
+            binding.Context.Host.SetActive(true);
+            binding.Instance.Apply(config);
+        }
+        /// <summary>
+        /// Reports the failure and, when an earlier configuration succeeded, rebuilds a fresh instance from it so the
+        /// last valid result stays in the world. Dependents see phase -1 and keep their own last results.
+        /// </summary>
+        void Fail(ICapabilityAdapter adapter, Binding binding, string signature, int revision, Exception error, bool keepLastValid = true)
+        {
+            DisposeBinding(binding);
+            binding.Signature = "!" + signature;
+            binding.Phase = -1;
+            binding.Retained = false;
+            string message = Failure(error);
+            if (keepLastValid && binding.LastValid != null && adapter != null)
+            {
+                try
+                {
+                    ApplyBinding(adapter, binding, binding.LastValid);
+                    binding.Retained = true;
+                    message += " Keeping last valid configuration.";
+                }
+                catch (Exception fallback)
+                {
+                    DisposeBinding(binding);
+                    message += " Last valid configuration also failed: " + fallback.Message;
+                }
+            }
+            WriteState(binding.Context.Path, -1, revision, binding.Generation, message);
+        }
+        // A tick failure would repeat with the same inputs, so it disposes the instance until an edit or dependency change.
+        void TickFailed(Binding binding, Exception error) => Fail(null, binding, binding.Signature.TrimStart('!'), binding.Revision, error, false);
         static string Failure(Exception e) => (Application.isEditor || Debug.isDebugBuild) ? e.ToString() : e.Message;
         void WriteState(string path, int phase, int revision, int generation, string message) => session.SetComponentJson(path, "CapState", JsonConvert.SerializeObject(new { phase, appliedRevision = revision, generation, message }));
         float nextReconcile;
@@ -282,36 +372,45 @@ namespace Ecaty.Flecs.Capabilities
                 Reconcile();
             }
             foreach (var b in bindings.Values.ToArray())
-            if (b.Phase == 1)
+            if (b.Ticks)
                 try
                 {
                     b.Instance?.Tick(Time.unscaledDeltaTime);
                 }
-                catch (Exception e) { DisposeBinding(b); b.Phase = -1; WriteState(b.Context.Path, -1, 0, b.Generation, Failure(e)); }
+                catch (Exception e)
+                {
+                    TickFailed(b, e);
+                }
         }
         void FixedUpdate()
         {
             if (session == null || session.IsDisposed)
                 return;
             foreach (var b in bindings.Values.ToArray())
-            if (b.Phase == 1)
+            if (b.Ticks)
                 try
                 {
                     b.Instance?.FixedTick(Time.fixedDeltaTime);
                 }
-                catch (Exception e) { DisposeBinding(b); b.Phase = -1; WriteState(b.Context.Path, -1, 0, b.Generation, Failure(e)); }
+                catch (Exception e)
+                {
+                    TickFailed(b, e);
+                }
         }
         void LateUpdate()
         {
             if (session == null || session.IsDisposed)
                 return;
             foreach (var b in bindings.Values.ToArray())
-            if (b.Phase == 1)
+            if (b.Ticks)
                 try
                 {
                     b.Instance?.LateTick(Time.deltaTime);
                 }
-                catch (Exception e) { DisposeBinding(b); b.Phase = -1; WriteState(b.Context.Path, -1, 0, b.Generation, Failure(e)); }
+                catch (Exception e)
+                {
+                    TickFailed(b, e);
+                }
         }
         void Remove(string key)
         {
@@ -407,7 +506,6 @@ namespace Ecaty.Flecs.Capabilities
         public static bool B(this JObject j, string key) => (bool?)j[key] ?? false;
         public static string S(this JObject j, string key) => (string)j[key] ?? "";
         public static Vector3 XYZ(this JObject j) => new(j.F("x"), j.F("y"), j.F("z"));
-        public static Color RGB(this JObject j) => new(j.F("colorR", 1), j.F("colorG", 1), j.F("colorB", 1));
         public static ulong Entity(this JObject j, string key, FlecsSession s) => j[key]?.Type == JTokenType.Integer ? (ulong)j[key] : s.Lookup(j.S(key));
     }
 }

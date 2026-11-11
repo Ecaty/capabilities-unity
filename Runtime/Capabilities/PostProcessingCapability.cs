@@ -7,7 +7,13 @@ using UnityEngine.Rendering.Universal;
 
 namespace Ecaty.Flecs.Capabilities
 {
-    public sealed class PostProcessingCapability : CapabilityInstance
+    [Capability("CapPostProcessing", "world appearance", 40)]
+    public sealed class PostProcessingConfig
+    {
+        public float exposure, contrast, saturation, temperature, bloom, threshold = .9f, vignette;
+        public int tonemap;
+    }
+    public sealed class PostProcessingCapability : CapabilityInstance<PostProcessingConfig>
     {
         private readonly UniversalAdditionalCameraData camera;
         private sealed class CameraUse
@@ -34,7 +40,7 @@ namespace Ecaty.Flecs.Capabilities
             Host.layer = layer;
         }
 
-        public override void Apply(JObject config)
+        protected override void Apply(PostProcessingConfig config)
         {
             if (!profile)
             {
@@ -45,15 +51,15 @@ namespace Ecaty.Flecs.Capabilities
                 volume.sharedProfile = profile;
             }
             var color = Effect<ColorAdjustments>();
-            color.postExposure.Override(Mathf.Clamp(config.F("exposure"), -5f, 5f));
-            color.contrast.Override(config.F("contrast"));
-            color.saturation.Override(config.F("saturation"));
-            Effect<WhiteBalance>().temperature.Override(config.F("temperature"));
+            color.postExposure.Override(Mathf.Clamp(config.exposure, -5f, 5f));
+            color.contrast.Override(config.contrast);
+            color.saturation.Override(config.saturation);
+            Effect<WhiteBalance>().temperature.Override(config.temperature);
             var bloom = Effect<Bloom>();
-            bloom.intensity.Override(Mathf.Clamp(config.F("bloom"), 0f, 4f));
-            bloom.threshold.Override(Mathf.Clamp(config.F("threshold", .9f), 0f, 10f));
-            Effect<Vignette>().intensity.Override(config.F("vignette"));
-            Effect<Tonemapping>().mode.Override((TonemappingMode)Mathf.Clamp(config.I("tonemap"), 0, 2));
+            bloom.intensity.Override(Mathf.Clamp(config.bloom, 0f, 4f));
+            bloom.threshold.Override(Mathf.Clamp(config.threshold, 0f, 10f));
+            Effect<Vignette>().intensity.Override(config.vignette);
+            Effect<Tonemapping>().mode.Override((TonemappingMode)Mathf.Clamp(config.tonemap, 0, 2));
             if (!ownsCamera)
             {
                 var usage = cameraUses.GetValue(camera, _ => new CameraUse());

@@ -12,28 +12,6 @@ using UnityEngine.Animations.Rigging;
 using UnityEngine.VFX;
 namespace Ecaty.Flecs.Capabilities
 {
-    public static class UnityCapabilities
-    {
-        public static void Register(CapabilityRuntime runtime)
-        {
-            runtime.Register(new Adapter<TerrainCapability>("CapTerrain", "ground modifiers", 10, c => new(c)));
-            runtime.Register(new Adapter<HandleCapability>("CapHandle", "direct manipulation", 50, c => new(c)));
-            runtime.Register(new Adapter<BodyCapability>("CapBody", "physics", 20, c => new(c)));
-            runtime.Register(new Adapter<MaterialCapability>("CapMaterial", "appearance", 40, c => new(c)));
-            runtime.Register(new Adapter<ParticleCapability>("CapParticles", "effects", 40, c => new(c)));
-            runtime.Register(new Adapter<PostProcessingCapability>("CapPostProcessing", "world appearance", 40, c => new(c)));
-            runtime.Register(new Adapter<LightCapability>("CapLight", "lighting", 40, c => new(c)));
-            runtime.Register(new Adapter<AudioCapability>("CapAudio", "audio", 40, c => new(c)));
-            runtime.Register(new Adapter<SurfaceCapability>("CapNavSurface", "navigation surface", 30, c => new(c)));
-            runtime.Register(new Adapter<NavigationCapability>("CapNavigation", "navigation intent", 35, c => new(c)));
-            runtime.Register(new Adapter<CameraCapability>("CapCamera", "camera", 40, c => new(c)));
-            runtime.Register(new Adapter<TimelineCapability>("CapTimeline", "presentation", 40, c => new(c)));
-            runtime.Register(new Adapter<RigCapability>("CapRig", "IK constraints", 40, c => new(c)));
-            runtime.Register(new Adapter<VfxCapability>("CapVfx", "GPU effects", 40, c => new(c)));
-            runtime.Register(new Adapter<WaterCapability>("CapWater", "water volume", 20, c => new(c)));
-            runtime.Register(new Adapter<BuoyancyCapability>("CapBuoyancy", "buoyancy", 25, c => new(c)));
-        }
-    }
     public sealed class ContactReadback : MonoBehaviour
     {
         readonly HashSet<Collider> touching = new(); public int Count => touching.Count;
@@ -41,14 +19,20 @@ namespace Ecaty.Flecs.Capabilities
         void OnCollisionExit(Collision c) => touching.Remove(c.collider);
         void OnDisable() => touching.Clear();
     }
-    public sealed class BodyCapability : CapabilityInstance
+    [Capability("CapBody", "physics", 20)]
+    public sealed class BodyConfig
+    {
+        public float mass = 1, radius = .5f, height = 1, gravity = 1;
+        public bool kinematic;
+    }
+    public sealed class BodyCapability : CapabilityInstance<BodyConfig>
     {
         Rigidbody body; CapsuleCollider collider; ContactReadback contacts; float gravity; int forceSequence = int.MinValue;
         bool drag, wasKinematic; float lastReport;
         public BodyCapability(CapabilityContext c) : base(c) { }
-        public override void Apply(JObject j)
+        protected override void Apply(BodyConfig j)
         {
-            if (j.F("mass", 1) <= 0 || j.F("radius", .5f) <= 0)
+            if (j.mass <= 0 || j.radius <= 0)
                 throw new ArgumentException("Mass/radius must be positive.");
             if (!body)
             {
@@ -59,12 +43,12 @@ namespace Ecaty.Flecs.Capabilities
                 collider = Target.gameObject.AddComponent<CapsuleCollider>();
                 contacts = Target.gameObject.AddComponent<ContactReadback>();
             }
-            body.mass = Mathf.Clamp(j.F("mass", 1), .001f, 10000);
+            body.mass = Mathf.Clamp(j.mass, .001f, 10000);
             body.useGravity = false;
-            body.isKinematic = j.B("kinematic");
-            collider.radius = Mathf.Clamp(j.F("radius", .5f), .01f, 100);
-            collider.height = Mathf.Clamp(j.F("height", 1), collider.radius * 2, 200);
-            gravity = Mathf.Clamp(j.F("gravity", 1), -20, 20);
+            body.isKinematic = j.kinematic;
+            collider.radius = Mathf.Clamp(j.radius, .01f, 100);
+            collider.height = Mathf.Clamp(j.height, collider.radius * 2, 200);
+            gravity = Mathf.Clamp(j.gravity, -20, 20);
         }
         public override void FixedTick(float delta)
         {
@@ -146,12 +130,19 @@ namespace Ecaty.Flecs.Capabilities
             Context.ReleasePose();
         }
     }
-    public sealed class MaterialCapability : CapabilityInstance
+    [Capability("CapMaterial", "appearance", 40)]
+    public sealed class MaterialConfig
+    {
+        public float colorR = 1, colorG = 1, colorB = 1, metallic, smoothness;
+        [AssetKey] public string material = "";
+    }
+    public sealed class MaterialCapability : CapabilityInstance<MaterialConfig>
     {
         readonly List<(Renderer, Material, MaterialPropertyBlock)> originals = new();
         public MaterialCapability(CapabilityContext c) : base(c) { if (!c.Runtime.World.AcquireAppearance(c.TargetEntity, this)) throw new InvalidOperationException("Target already has an appearance owner."); }
-        public override void Apply(JObject j)
+        protected override void Apply(MaterialConfig j)
         {
+            var color = new Color(j.colorR, j.colorG, j.colorB);
             foreach (var r in Target.GetComponentsInChildren<Renderer>())
             {
                 if (!originals.Exists(x => x.Item1 == r))
@@ -160,15 +151,15 @@ namespace Ecaty.Flecs.Capabilities
                     r.GetPropertyBlock(old);
                     originals.Add((r, r.sharedMaterial, old));
                 }
-                var material = Context.Asset<Material>(j.S("material"));
+                var material = Context.Asset<Material>(j.material);
                 if (material)
                     r.sharedMaterial = material;
                 var block = new MaterialPropertyBlock();
                 r.GetPropertyBlock(block);
-                block.SetColor("_BaseColor", j.RGB());
-                block.SetColor("_Color", j.RGB());
-                block.SetFloat("_Metallic", Mathf.Clamp01(j.F("metallic")));
-                block.SetFloat("_Smoothness", Mathf.Clamp01(j.F("smoothness")));
+                block.SetColor("_BaseColor", color);
+                block.SetColor("_Color", color);
+                block.SetFloat("_Metallic", Mathf.Clamp01(j.metallic));
+                block.SetFloat("_Smoothness", Mathf.Clamp01(j.smoothness));
                 r.SetPropertyBlock(block);
             }
         }
@@ -183,41 +174,59 @@ namespace Ecaty.Flecs.Capabilities
             }
         }
     }
-    public sealed class ParticleCapability : CapabilityInstance
+    [Capability("CapParticles", "effects", 40)]
+    public sealed class ParticleConfig
+    {
+        public float rate = 10, lifetime = 1, speed = 1, size = .1f, colorR = 1, colorG = 1, colorB = 1;
+    }
+    public sealed class ParticleCapability : CapabilityInstance<ParticleConfig>
     {
         ParticleSystem particles;
         public ParticleCapability(CapabilityContext c) : base(c) { particles = Host.AddComponent<ParticleSystem>(); particles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear); }
-        public override void Apply(JObject j)
+        protected override void Apply(ParticleConfig j)
         {
             var m = particles.main;
             m.maxParticles = 2048;
-            m.startLifetime = Mathf.Clamp(j.F("lifetime", 1), .01f, 60);
-            m.startSpeed = j.F("speed", 1);
-            m.startSize = Mathf.Clamp(j.F("size", .1f), .001f, 10);
-            m.startColor = j.RGB();
+            m.startLifetime = Mathf.Clamp(j.lifetime, .01f, 60);
+            m.startSpeed = j.speed;
+            m.startSize = Mathf.Clamp(j.size, .001f, 10);
+            m.startColor = new Color(j.colorR, j.colorG, j.colorB);
             var e = particles.emission;
-            e.rateOverTime = Mathf.Clamp(j.F("rate", 10), 0, 1000);
+            e.rateOverTime = Mathf.Clamp(j.rate, 0, 1000);
             particles.Play();
         }
     }
-    public sealed class LightCapability : CapabilityInstance
+    [Capability("CapLight", "lighting", 40)]
+    public sealed class LightConfig
+    {
+        public int kind;
+        public float intensity = 1, range = 10, colorR = 1, colorG = 1, colorB = 1;
+    }
+    public sealed class LightCapability : CapabilityInstance<LightConfig>
     {
         readonly Light light; public LightCapability(CapabilityContext c) : base(c) { light = Host.AddComponent<Light>(); }
-        public override void Apply(JObject j)
+        protected override void Apply(LightConfig j)
         {
-            light.type = j.I("kind") == 1 ? LightType.Directional : j.I("kind") == 2 ? LightType.Spot : LightType.Point;
-            light.color = j.RGB();
-            light.intensity = Mathf.Clamp(j.F("intensity", 1), 0, 100);
-            light.range = Mathf.Clamp(j.F("range", 10), .01f, 1000);
+            light.type = j.kind == 1 ? LightType.Directional : j.kind == 2 ? LightType.Spot : LightType.Point;
+            light.color = new Color(j.colorR, j.colorG, j.colorB);
+            light.intensity = Mathf.Clamp(j.intensity, 0, 100);
+            light.range = Mathf.Clamp(j.range, .01f, 1000);
         }
     }
-    public sealed class SurfaceCapability : CapabilityInstance
+    [Capability("CapNavSurface", "navigation surface", 30)]
+    public sealed class SurfaceConfig
+    {
+        public float radius = 10, height = 10;
+        public int rebuild;
+    }
+    public sealed class SurfaceCapability : CapabilityInstance<SurfaceConfig>
     {
         readonly NavMeshSurface surface;
         public SurfaceCapability(CapabilityContext c) : base(c) { surface = Host.AddComponent<NavMeshSurface>(); surface.collectObjects = CollectObjects.Volume; surface.useGeometry = NavMeshCollectGeometry.PhysicsColliders; }
-        public override void Apply(JObject j)
+        protected override void Apply(SurfaceConfig j)
         {
-            surface.size = new Vector3(Mathf.Clamp(j.F("radius", 10) * 2, 1, 1000), Mathf.Clamp(j.F("height", 10), 1, 1000), Mathf.Clamp(j.F("radius", 10) * 2, 1, 1000));
+            float width = Mathf.Clamp(j.radius * 2, 1, 1000);
+            surface.size = new Vector3(width, Mathf.Clamp(j.height, 1, 1000), width);
             surface.BuildNavMesh();
         }
         public override void Dispose()
@@ -225,16 +234,22 @@ namespace Ecaty.Flecs.Capabilities
             surface.RemoveData();
         }
     }
-    public sealed class NavigationCapability : CapabilityInstance
+    [Capability("CapNavigation", "navigation intent", 35)]
+    public sealed class NavigationConfig
+    {
+        [EntityField] public string command = "";
+        public float x, y, z, speed = 1, stopping = .1f;
+    }
+    public sealed class NavigationCapability : CapabilityInstance<NavigationConfig>
     {
         readonly NavMeshPath path = new(); Vector3 goal; float speed, stopping; ulong command; float next;
         public NavigationCapability(CapabilityContext c) : base(c) { }
-        public override void Apply(JObject j)
+        protected override void Apply(NavigationConfig j)
         {
-            goal = j.XYZ();
-            speed = Mathf.Clamp(j.F("speed", 1), 0, 100);
-            stopping = Mathf.Max(.01f, j.F("stopping", .1f));
-            command = j.Entity("command", Context.Session);
+            goal = new Vector3(j.x, j.y, j.z);
+            speed = Mathf.Clamp(j.speed, 0, 100);
+            stopping = Mathf.Max(.01f, j.stopping);
+            command = Context.Entity(j.command);
             next = 0;
         }
         public override void Tick(float delta)
@@ -269,29 +284,43 @@ namespace Ecaty.Flecs.Capabilities
             }
         }
     }
-    public sealed class CameraCapability : CapabilityInstance
+    [Capability("CapCamera", "camera", 40)]
+    public sealed class CameraConfig
+    {
+        public float distance = 8, height = 4;
+        public int priority = 10;
+    }
+    public sealed class CameraCapability : CapabilityInstance<CameraConfig>
     {
         readonly CinemachineCamera camera; readonly CinemachineFollow follow;
         public CameraCapability(CapabilityContext c) : base(c) { camera = Host.AddComponent<CinemachineCamera>(); follow = Host.AddComponent<CinemachineFollow>(); Host.AddComponent<CinemachineRotationComposer>(); camera.Follow = Target; camera.LookAt = Target; }
-        public override void Apply(JObject j)
+        protected override void Apply(CameraConfig j)
         {
-            follow.FollowOffset = new Vector3(0, j.F("height", 4), -Mathf.Max(.1f, j.F("distance", 8)));
-            camera.Priority = j.I("priority", 10);
+            follow.FollowOffset = new Vector3(0, j.height, -Mathf.Max(.1f, j.distance));
+            camera.Priority = j.priority;
         }
     }
-    public sealed class TimelineCapability : CapabilityInstance
+    [Capability("CapTimeline", "presentation", 40)]
+    public sealed class TimelineConfig
+    {
+        public float duration = 1;
+        public bool playing;
+        public float time;
+        [AssetKey] public string audio = "";
+    }
+    public sealed class TimelineCapability : CapabilityInstance<TimelineConfig>
     {
         readonly PlayableDirector director; TimelineAsset timeline;
         public TimelineCapability(CapabilityContext c) : base(c) { director = Host.AddComponent<PlayableDirector>(); director.playOnAwake = false; }
-        public override void Apply(JObject j)
+        protected override void Apply(TimelineConfig j)
         {
             director.Stop();
             if (timeline)
                 UnityEngine.Object.Destroy(timeline);
             timeline = ScriptableObject.CreateInstance<TimelineAsset>();
             timeline.durationMode = TimelineAsset.DurationMode.FixedLength;
-            timeline.fixedDuration = Mathf.Clamp(j.F("duration", 1), .01f, 3600);
-            var clip = Context.Asset<AudioClip>(j.S("audio"));
+            timeline.fixedDuration = Mathf.Clamp(j.duration, .01f, 3600);
+            var clip = Context.Asset<AudioClip>(j.audio);
             if (clip)
             {
                 var track = timeline.CreateTrack<AudioTrack>(null, "Audio");
@@ -302,9 +331,9 @@ namespace Ecaty.Flecs.Capabilities
                 director.SetGenericBinding(track, source);
             }
             director.playableAsset = timeline;
-            director.time = Math.Clamp(j.F("time"), 0, timeline.fixedDuration);
+            director.time = Math.Clamp(j.time, 0, timeline.fixedDuration);
             director.Evaluate();
-            if (j.B("playing"))
+            if (j.playing)
                 director.Play();
         }
         public override void Dispose()
@@ -314,13 +343,22 @@ namespace Ecaty.Flecs.Capabilities
                 UnityEngine.Object.Destroy(timeline);
         }
     }
-    public sealed class RigCapability : CapabilityInstance
+    [Capability("CapRig", "IK constraints", 40)]
+    public sealed class RigConfig
+    {
+        [EntityField] public string root = "", mid = "", tip = "", goal = "";
+        public float weight = 1;
+    }
+    public sealed class RigCapability : CapabilityInstance<RigConfig>
     {
         RigBuilder builder; Rig rig; TwoBoneIKConstraint constraint; bool ownBuilder, ownAnimator; float nextReport;
         public RigCapability(CapabilityContext c) : base(c) { }
-        public override void Apply(JObject j)
+        protected override void Apply(RigConfig j)
         {
-            Transform root = Context.Resolve(j.Entity("root", Context.Session)), mid = Context.Resolve(j.Entity("mid", Context.Session)), tip = Context.Resolve(j.Entity("tip", Context.Session)), goal = Context.Resolve(j.Entity("goal", Context.Session));
+            Transform root = Context.Resolve(j.root);
+            Transform mid = Context.Resolve(j.mid);
+            Transform tip = Context.Resolve(j.tip);
+            Transform goal = Context.Resolve(j.goal);
             if (!root || !mid || !tip || !goal || !mid.IsChildOf(root) || !tip.IsChildOf(mid))
                 throw new ArgumentException("IK needs a valid root/mid/tip chain and target.");
             var animator = Target.GetComponent<Animator>();
@@ -353,7 +391,7 @@ namespace Ecaty.Flecs.Capabilities
             data.targetPositionWeight = 1;
             data.targetRotationWeight = 0;
             constraint.data = data;
-            constraint.weight = Mathf.Clamp01(j.F("weight", 1));
+            constraint.weight = Mathf.Clamp01(j.weight);
             if (!builder.Build())
                 throw new InvalidOperationException("Runtime rig graph could not build.");
         }
@@ -387,22 +425,30 @@ namespace Ecaty.Flecs.Capabilities
                 UnityEngine.Object.Destroy(Target.GetComponent<Animator>());
         }
     }
-    public sealed class VfxCapability : CapabilityInstance
+    [Capability("CapVfx", "GPU effects", 40)]
+    public sealed class VfxConfig
+    {
+        [AssetKey] public string asset = "";
+        public float rate = 10;
+        public string @event = "";
+        public int trigger;
+    }
+    public sealed class VfxCapability : CapabilityInstance<VfxConfig>
     {
         readonly VisualEffect vfx; int trigger = int.MinValue;
         public VfxCapability(CapabilityContext c) : base(c) { vfx = Host.AddComponent<VisualEffect>(); }
-        public override void Apply(JObject j)
+        protected override void Apply(VfxConfig j)
         {
-            var asset = Context.Asset<VisualEffectAsset>(j.S("asset"));
+            var asset = Context.Asset<VisualEffectAsset>(j.asset);
             if (!asset)
                 throw new ArgumentException("Register a compiled VFX asset in the capability asset catalog.");
             vfx.visualEffectAsset = asset;
             if (vfx.HasFloat("Rate"))
-                vfx.SetFloat("Rate", j.F("rate", 10));
-            if (j.I("trigger") != trigger)
+                vfx.SetFloat("Rate", j.rate);
+            if (j.trigger != trigger)
             {
-                trigger = j.I("trigger");
-                vfx.SendEvent(string.IsNullOrEmpty(j.S("event")) ? "OnPlay" : j.S("event"));
+                trigger = j.trigger;
+                vfx.SendEvent(string.IsNullOrEmpty(j.@event) ? "OnPlay" : j.@event);
             }
         }
     }
@@ -410,28 +456,39 @@ namespace Ecaty.Flecs.Capabilities
     {
         public float Level, Density = 1000;
     }
-    public sealed class WaterCapability : CapabilityInstance
+    [Capability("CapWater", "water volume", 20)]
+    public sealed class WaterConfig
+    {
+        public float level, density = 1000;
+    }
+    public sealed class WaterCapability : CapabilityInstance<WaterConfig>
     {
         readonly WaterVolume water; public WaterCapability(CapabilityContext c) : base(c) { water = Host.AddComponent<WaterVolume>(); }
-        public override void Apply(JObject j)
+        protected override void Apply(WaterConfig j)
         {
-            water.Level = j.F("level");
-            water.Density = Mathf.Clamp(j.F("density", 1000), 1, 20000);
+            water.Level = j.level;
+            water.Density = Mathf.Clamp(j.density, 1, 20000);
         }
     }
-    public sealed class BuoyancyCapability : CapabilityInstance
+    [Capability("CapBuoyancy", "buoyancy", 25)]
+    public sealed class BuoyancyConfig
+    {
+        [EntityField] public string volume = "";
+        public float displacement = .001f, drag = 1;
+    }
+    public sealed class BuoyancyCapability : CapabilityInstance<BuoyancyConfig>
     {
         WaterVolume water; Rigidbody body; float displacement, drag;
         public BuoyancyCapability(CapabilityContext c) : base(c) { }
-        public override void Apply(JObject j)
+        protected override void Apply(BuoyancyConfig j)
         {
-            var volume = Context.Resolve(j.Entity("volume", Context.Session));
+            var volume = Context.Resolve(j.volume);
             water = volume ? volume.GetComponentInChildren<WaterVolume>() : null;
             body = Target.GetComponent<Rigidbody>();
             if (!water || !body)
                 throw new ArgumentException("Buoyancy needs a bound body and water volume.");
-            displacement = Mathf.Clamp(j.F("displacement", .001f), 0, 100);
-            drag = Mathf.Clamp(j.F("drag", 1), 0, 100);
+            displacement = Mathf.Clamp(j.displacement, 0, 100);
+            drag = Mathf.Clamp(j.drag, 0, 100);
         }
         public override void FixedTick(float delta)
         {
