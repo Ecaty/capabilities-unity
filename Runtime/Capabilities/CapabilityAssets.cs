@@ -3,14 +3,23 @@ using UnityEngine;
 namespace Ecaty.Flecs.Capabilities
 {
     [UnityEngine.Scripting.APIUpdating.MovedFrom(true, "Ecaty.Flecs.Capabilities", "Ecaty.Flecs", "CapabilityAssets")]
-    [CreateAssetMenu(menuName="Runtime/Runtime capability assets")]
-    public sealed class CapabilityAssets : ScriptableObject {
-        [Serializable] public struct Entry { public string Key; public UnityEngine.Object Asset; }
-        public Entry[] Entries=Array.Empty<Entry>();
-        public T Resolve<T>(string key) where T:UnityEngine.Object {
-            if(string.IsNullOrEmpty(key))return null;
-            foreach(var entry in Entries)if(entry.Key==key)return entry.Asset as T;
-            throw new ArgumentException("Unregistered or incompatible asset: "+key);
+    [CreateAssetMenu(menuName = "Runtime/Runtime capability assets")]
+    public sealed class CapabilityAssets : ScriptableObject
+    {
+        [Serializable]
+        public struct Entry
+        {
+            public string Key; public UnityEngine.Object Asset;
+        }
+        public Entry[] Entries = Array.Empty<Entry>();
+        public T Resolve<T>(string key) where T : UnityEngine.Object
+        {
+            if (string.IsNullOrEmpty(key))
+                return null;
+            foreach (var entry in Entries)
+            if (entry.Key == key)
+                return entry.Asset as T;
+            throw new ArgumentException("Unregistered or incompatible asset: " + key);
         }
     }
 }

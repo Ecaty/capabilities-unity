@@ -29,7 +29,8 @@ namespace Ecaty.Flecs.Capabilities
             if (layers == 0)
                 throw new InvalidOperationException("The view camera has no Volume layers.");
             int layer = 0;
-            while ((layers & (1 << layer)) == 0) layer++;
+            while ((layers & (1 << layer)) == 0)
+                layer++;
             Host.layer = layer;
         }
 
@@ -56,7 +57,8 @@ namespace Ecaty.Flecs.Capabilities
             if (!ownsCamera)
             {
                 var usage = cameraUses.GetValue(camera, _ => new CameraUse());
-                if (usage.Count == 0) usage.PreviousPostProcessing = camera.renderPostProcessing;
+                if (usage.Count == 0)
+                    usage.PreviousPostProcessing = camera.renderPostProcessing;
                 usage.Count++;
                 ownsCamera = true;
             }
@@ -83,7 +85,8 @@ namespace Ecaty.Flecs.Capabilities
                 }
             }
             ownsCamera = false;
-            if (!profile) return;
+            if (!profile)
+                return;
             foreach (var component in profile.components)
                 UnityEngine.Object.Destroy(component);
             UnityEngine.Object.Destroy(profile);
