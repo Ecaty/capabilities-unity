@@ -312,11 +312,25 @@ namespace Ecaty.Flecs.Capabilities
     {
         readonly PlayableDirector director; TimelineAsset timeline;
         public TimelineCapability(CapabilityContext c) : base(c) { director = Host.AddComponent<PlayableDirector>(); director.playOnAwake = false; }
+        // Tracks and clip assets are separate ScriptableObjects that do not die with the timeline.
+        void DestroyTimeline()
+        {
+            if (!timeline)
+                return;
+            foreach (var track in timeline.GetOutputTracks())
+            {
+                foreach (var clip in track.GetClips())
+                    if (clip.asset)
+                        UnityEngine.Object.Destroy(clip.asset);
+                UnityEngine.Object.Destroy(track);
+            }
+            UnityEngine.Object.Destroy(timeline);
+            timeline = null;
+        }
         protected override void Apply(TimelineConfig j)
         {
             director.Stop();
-            if (timeline)
-                UnityEngine.Object.Destroy(timeline);
+            DestroyTimeline();
             timeline = ScriptableObject.CreateInstance<TimelineAsset>();
             timeline.durationMode = TimelineAsset.DurationMode.FixedLength;
             timeline.fixedDuration = Mathf.Clamp(j.duration, .01f, 3600);
@@ -339,8 +353,7 @@ namespace Ecaty.Flecs.Capabilities
         public override void Dispose()
         {
             director.Stop();
-            if (timeline)
-                UnityEngine.Object.Destroy(timeline);
+            DestroyTimeline();
         }
     }
     [Capability("CapRig", "IK constraints", 40)]

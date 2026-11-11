@@ -159,6 +159,10 @@ namespace Ecaty.Flecs.Capabilities
                 source.Append(d.Schema).Append('\n');
             return source.ToString();
         }
+        /// <summary>Package-relative path of the committed export for tools that load schemas without Unity (Python smokes).</summary>
+        public const string ExportPath = "Packages/com.runtime.capabilities/Runtime/Capabilities/CapabilityConfigSchema.flecs";
+        /// <summary>Contents of <see cref="ExportPath"/>; the runtime itself always generates the schema from the classes.</summary>
+        public static string ExportText() => "// Generated from [Capability] configuration classes. Do not edit; recompile in Unity to refresh.\n" + Schema();
         static CapabilityDescriptor[] Discover()
         {
             var configs = new Dictionary<Type, CapabilityDescriptor>();
