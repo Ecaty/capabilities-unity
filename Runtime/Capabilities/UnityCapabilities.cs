@@ -249,7 +249,7 @@ namespace Ecaty.Flecs.Capabilities
             goal = new Vector3(j.x, j.y, j.z);
             speed = Mathf.Clamp(j.speed, 0, 100);
             stopping = Mathf.Max(.01f, j.stopping);
-            command = Context.Entity(j.command);
+            command = Context.ResolveEntity(j.command);
             next = 0;
         }
         public override void Tick(float delta)

@@ -25,7 +25,7 @@ namespace Ecaty.Flecs.Capabilities
             float falloff = Mathf.Clamp(j.falloff, .05f, size);
             int n = Mathf.Clamp(j.resolution, 3, 129);
             string points = j.points;
-            var source = Context.Entity(j.source);
+            var source = Context.ResolveEntity(j.source);
             if (source != 0)
             {
                 var input = Context.Session.ComponentJson(source, "CapSpline");
@@ -152,7 +152,7 @@ namespace Ecaty.Flecs.Capabilities
             knob.SetActive(j.enabled);
             knob.transform.localScale = Vector3.one * Mathf.Clamp(j.radius * 2, .02f, 2);
             grid = Mathf.Max(0, j.grid);
-            edit = Context.Entity(j.edit);
+            edit = Context.ResolveEntity(j.edit);
             if (edit == 0)
                 edit = Context.TargetEntity;
             component = j.component;

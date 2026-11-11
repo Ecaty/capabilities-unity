@@ -57,7 +57,7 @@ namespace Ecaty.Flecs.Capabilities
         public T Asset<T>(string key) where T : UnityEngine.Object => Runtime.Assets != null ? Runtime.Assets.Resolve<T>(key) : null;
         public Transform Resolve(ulong id) => Runtime.Resolve(id);
         /// <summary>Resolves an entity field (path, numeric id, or empty for none).</summary>
-        public ulong Entity(string reference)
+        public ulong ResolveEntity(string reference)
         {
             if (string.IsNullOrEmpty(reference) || reference == "0" || reference == "#0")
                 return 0;
@@ -65,7 +65,7 @@ namespace Ecaty.Flecs.Capabilities
                 return id;
             return Session.Lookup(reference);
         }
-        public Transform Resolve(string reference) => Runtime.Resolve(Entity(reference));
+        public Transform Resolve(string reference) => Runtime.Resolve(ResolveEntity(reference));
         public JObject Read(string type)
         {
             var value = Session.ComponentJson(Entity, type);
@@ -184,8 +184,7 @@ namespace Ecaty.Flecs.Capabilities
         {
             if (target.ManagedScriptSource(SchemaModule) == null)
             {
-                target.SetManagedScript(SchemaModule, Resources.Load<TextAsset>(SchemaModule).text + "
-" + CapabilityCatalog.Schema());
+                target.SetManagedScript(SchemaModule, Resources.Load<TextAsset>(SchemaModule).text + "\n" + CapabilityCatalog.Schema());
                 return;
             }
             // One module per added struct: never re-evaluate a module that already defines live component types.
