@@ -1,8 +1,8 @@
 using System;
 using UnityEngine;
-namespace Ecaty.Flecs.Capabilities
+using Runtime.Flecs;
+namespace Runtime.Capabilities
 {
-    [UnityEngine.Scripting.APIUpdating.MovedFrom(true, "Ecaty.Flecs.Capabilities", "Ecaty.Flecs", "CapabilityAssets")]
     [CreateAssetMenu(menuName = "Runtime/Runtime capability assets")]
     public sealed class CapabilityAssets : ScriptableObject
     {

@@ -13,6 +13,6 @@
     "com.unity.timeline": "6.6.0",
     "com.unity.visualeffectgraph": "17.6.0",
     "com.unity.nuget.newtonsoft-json": "3.2.2",
-    "com.ecaty.flecs-unity": "0.2.1"
+    "com.runtime.flecs": "0.2.1"
   }
 }

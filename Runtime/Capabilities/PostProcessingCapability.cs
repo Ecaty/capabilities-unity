@@ -5,7 +5,8 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 
-namespace Ecaty.Flecs.Capabilities
+using Runtime.Flecs;
+namespace Runtime.Capabilities
 {
     [Capability("CapPostProcessing", "world appearance", 40)]
     public sealed class PostProcessingConfig

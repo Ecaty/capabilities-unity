@@ -5,7 +5,8 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-namespace Ecaty.Flecs.Capabilities
+using Runtime.Flecs;
+namespace Runtime.Capabilities
 {
     /// <summary>
     /// Saves and reconstructs capability bindings, their CapDependsOn graph, native behavior trees, selected adapter

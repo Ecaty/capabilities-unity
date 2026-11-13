@@ -3,7 +3,8 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityEngine.InputSystem;
-namespace Ecaty.Flecs.Capabilities
+using Runtime.Flecs;
+namespace Runtime.Capabilities
 {
     [Capability("CapTerrain", "ground modifiers", 10)]
     public sealed class TerrainConfig

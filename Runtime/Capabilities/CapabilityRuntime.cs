@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Ecaty.Flecs;
+using Runtime.Flecs;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
-namespace Ecaty.Flecs.Capabilities
+namespace Runtime.Capabilities
 {
     public interface ICapabilityAdapter
     {
@@ -80,7 +80,6 @@ namespace Ecaty.Flecs.Capabilities
         public void ReleasePose() => Runtime.World.ReleasePose(TargetEntity, this);
     }
     // The ECS is the source of truth. These dictionaries are disposable presentation bindings only.
-    [UnityEngine.Scripting.APIUpdating.MovedFrom(true, "Ecaty.Flecs.Capabilities", "Ecaty.Flecs", "CapabilityRuntime")]
     [DefaultExecutionOrder(150)]
     public sealed class CapabilityRuntime : MonoBehaviour
     {

@@ -5,7 +5,8 @@ using System.Reflection;
 using System.Text;
 using Newtonsoft.Json.Linq;
 using UnityEngine.Scripting;
-namespace Ecaty.Flecs.Capabilities
+using Runtime.Flecs;
+namespace Runtime.Capabilities
 {
     /// <summary>
     /// Declares a reflected capability configuration. The public fields of the class, in declaration order,

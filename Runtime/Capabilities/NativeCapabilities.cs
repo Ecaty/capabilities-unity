@@ -3,7 +3,8 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
-namespace Ecaty.Flecs.Capabilities
+using Runtime.Flecs;
+namespace Runtime.Capabilities
 {
     public sealed class NativeAudio : IDisposable
     {

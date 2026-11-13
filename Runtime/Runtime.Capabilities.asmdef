@@ -1,8 +1,8 @@
 {
   "name": "Runtime.Capabilities",
-  "rootNamespace": "Ecaty.Flecs.Capabilities",
+  "rootNamespace": "Runtime.Capabilities",
   "references": [
-    "Ecaty.Flecs",
+    "Runtime.Flecs",
     "Unity.Newtonsoft.Json",
     "Unity.InputSystem",
     "Unity.AI.Navigation",

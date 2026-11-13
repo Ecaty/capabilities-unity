@@ -2,7 +2,8 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Object = UnityEngine.Object;
-namespace Ecaty.Flecs.Capabilities
+using Runtime.Flecs;
+namespace Runtime.Capabilities
 {
     /// <summary>
     /// For plugins that create standalone meshes, materials, textures or ScriptableObjects without destroying them.

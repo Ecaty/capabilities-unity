@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using Ecaty.Flecs;
+using Runtime.Flecs;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityEngine.AI;
@@ -10,7 +10,7 @@ using UnityEngine.Playables;
 using UnityEngine.Timeline;
 using UnityEngine.Animations.Rigging;
 using UnityEngine.VFX;
-namespace Ecaty.Flecs.Capabilities
+namespace Runtime.Capabilities
 {
     public sealed class ContactReadback : MonoBehaviour
     {
