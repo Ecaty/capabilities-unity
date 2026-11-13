@@ -2,7 +2,8 @@ struct CapBinding(target: entity, enabled: bool, revision: i32)
 struct CapState(phase: i32, appliedRevision: i32, generation: i32, message: string)
 struct CapType(component: string, category: string, description: string)
 struct CapReadback(x: f32, y: f32, z: f32, vx: f32, vy: f32, vz: f32, contacts: i32)
-CapDependsOn {}
+// (CapDependsOn, prerequisite): deleting a prerequisite removes the edge from its dependants.
+CapDependsOn { (OnDeleteTarget, Remove) }
 CapDirty {}
 struct CapForce(x: f32, y: f32, z: f32, sequence: i32)
 struct CapDrag(x: f32, y: f32, z: f32, active: bool)
